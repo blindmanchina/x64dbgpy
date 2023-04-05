@@ -3,7 +3,8 @@
 set MSSDK=1
 set DISTUTILS_USE_SDK=1
 set VCVARS="%LOCALAPPDATA%\Programs\Common\Microsoft\Visual C++ for Python\9.0\vcvarsall.bat"
-	
+set PATH=%~dp0swig\swigwin-3.0.8;%PATH%
+
 IF EXIST "%PROGRAMFILES(X86)%" (
     FOR /f "tokens=3" %%x IN ('reg query HKLM\SOFTWARE\Wow6432Node\Python\PythonCore\2.7\InstallPath /ve') DO (
         set PYTHON27X86=%%x

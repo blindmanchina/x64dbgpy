@@ -19,6 +19,10 @@
 
 PyObject* pModule, *pEventObject;
 HINSTANCE hInst;
+HMODULE hPython27;
+
+// This is necessary because python27 is delay loaded
+#define PYDATA(symbol) []() -> decltype(symbol)& { static auto ptr = GetProcAddress(hPython27, #symbol); return *(decltype(&symbol))ptr; }()
 
 enum
 {
@@ -155,7 +159,7 @@ static bool ExecutePythonScript(const wchar_t* szFileName, int argc, char* argv[
 
     if(result == NULL)
     {
-        if(PyErr_ExceptionMatches(PyExc_SystemExit))
+        if(PyErr_ExceptionMatches(PYDATA(PyExc_SystemExit)))
             _plugin_logprintf("[PYTHON] SystemExit...\n");
         else
             _plugin_logprintf("[PYTHON] Exception...\n");
@@ -704,6 +708,45 @@ static bool findX64dbgPythonHome(std::wstring & home)
 
 bool pyInit(PLUG_INITSTRUCT* initStruct)
 {
+    // Find and set the PythonHome
+    std::wstring home;
+    if(!findX64dbgPythonHome(home))
+    {
+        _plugin_logputs("[PYTHON] Failed to find PythonHome (do you have \\Lib\\site-packages?)...");
+        BridgeSettingSet("x64dbgpy", "PythonHome", "Install Python!");
+        return false;
+    }
+    if(!home.empty() && home.back() == L'\\')
+        home.pop_back();
+    auto pythonDll = home + L"\\python27.dll";
+    if(!FileExists(pythonDll.c_str()))
+    {
+        wchar_t szSystemDir[MAX_PATH] = L"";
+        GetSystemDirectoryW(szSystemDir, _countof(szSystemDir));
+        pythonDll = szSystemDir;
+        if(!pythonDll.empty() && pythonDll.back() == L'\\')
+            pythonDll.pop_back();
+        pythonDll += L"\\python27.dll";
+    }
+    hPython27 = LoadLibraryW(pythonDll.c_str());
+    if(!hPython27)
+    {
+        _plugin_logprintf("[PYTHON] Failed to load Python DLL: %s\n", Utf16ToUtf8(pythonDll).c_str());
+        BridgeSettingSet("x64dbgpy", "PythonHome", "Install Python!");
+        return false;
+    }
+    else
+    {
+        _plugin_logprintf("[PYTHON] Python DLL: %s\n", Utf16ToUtf8(pythonDll).c_str());
+    }
+    BridgeSettingSet("x64dbgpy", "PythonHome", Utf16ToUtf8(home).c_str());
+    static wchar_t dir[65536] = L"";
+    GetShortPathNameW(home.c_str(), dir, _countof(dir));
+    static char PythonHomeStatic[65536] = "";
+    strncpy_s(PythonHomeStatic, Utf16ToUtf8(dir).c_str(), _TRUNCATE);
+    _plugin_logprintf("[PYTHON] PythonHome: \"%s\"\n", Utf16ToUtf8(home).c_str());
+    Py_SetPythonHome(PythonHomeStatic);
+
     // Register python command handler
     SCRIPTTYPEINFO info;
     strcpy_s(info.name, "Python");
@@ -726,30 +769,14 @@ bool pyInit(PLUG_INITSTRUCT* initStruct)
     regCmd("PyRunGuiScript", cbPyRunGuiScriptCommand);
     regCmd("PyDebug", [](int argc, char* argv[])
     {
-        Py_DebugFlag = 1;
-        Py_VerboseFlag = 1;
+        PYDATA(Py_DebugFlag) = 1;
+        PYDATA(Py_VerboseFlag) = 1;
         return true;
     });
 
-    // Find and set the PythonHome
-    std::wstring home;
-    if(!findX64dbgPythonHome(home))
-    {
-        _plugin_logputs("[PYTHON] Failed to find PythonHome (do you have \\Lib\\site-packages?)...");
-        BridgeSettingSet("x64dbgpy", "PythonHome", "Install Python!");
-        return false;
-    }
-    BridgeSettingSet("x64dbgpy", "PythonHome", Utf16ToUtf8(home).c_str());
-    static wchar_t dir[65536] = L"";
-    GetShortPathNameW(home.c_str(), dir, _countof(dir));
-    static char PythonHomeStatic[65536] = "";
-    strncpy_s(PythonHomeStatic, Utf16ToUtf8(dir).c_str(), _TRUNCATE);
-    _plugin_logprintf("[PYTHON] PythonHome: \"%s\"\n", Utf16ToUtf8(home).c_str());
-    Py_SetPythonHome(PythonHomeStatic);
-
     // Initialize threads & python interpreter
     PyEval_InitThreads();
-    Py_InspectFlag = 1;
+    PYDATA(Py_InspectFlag) = 1;
     Py_InitializeEx(0);
 
     // Add 'plugins' (current directory) to sys.path

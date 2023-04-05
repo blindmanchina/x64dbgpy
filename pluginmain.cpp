@@ -33,7 +33,7 @@ DLL_EXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct)
     pySetup();
 }
 
-extern "C" DLL_EXPORT BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
     if(fdwReason == DLL_PROCESS_ATTACH)
     {
